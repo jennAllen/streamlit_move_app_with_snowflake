@@ -1,0 +1,5 @@
+altair
+pandas
+snowflake-connector-python
+streamlit
+posit-sdk
