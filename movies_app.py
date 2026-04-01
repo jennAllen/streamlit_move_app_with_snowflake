@@ -65,7 +65,6 @@ def load_movies():
     conn = init_connection()
     query = "SELECT * FROM JENN_MOVIES ORDER BY rating DESC"
     df = pd.read_sql(query, conn)
-    conn.close()
     return df
             
 # Load the data
