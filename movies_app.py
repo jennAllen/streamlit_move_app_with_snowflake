@@ -10,12 +10,18 @@ st.set_page_config(page_title="Movie Database", page_icon="🎬")
 # Title
 st.title("🎬 Movie Database")
 
-# Initialize connection automatically
+# List OAuth integrations associated with this content
 @st.cache_resource
-def init_connection():
+def get_integrations():
+    client = connect.Client()
+    content = client.content.get()
+    return {assoc.name: assoc.guid for assoc in content.associations}
+
+# Initialize connection for a specific integration
+@st.cache_resource
+def init_connection(integration_guid):
     # Try to get credentials from environment variables first, then fall back to Streamlit secrets
     if "SNOWFLAKE_ACCOUNT" in os.environ:
-        # Use environment variables with OAuth token authentication via Connect SDK
         account = os.environ["SNOWFLAKE_ACCOUNT"]
         warehouse = os.environ.get("SNOWFLAKE_WAREHOUSE", "DEFAULT_WH")
         database = os.environ.get("SNOWFLAKE_DATABASE", "DEMOS")
@@ -28,20 +34,20 @@ def init_connection():
             st.error("Unable to get user session token. Make sure you're running in Posit Connect.")
             st.stop()
 
-        # Get OAuth access token using Posit Connect SDK
+        # Get OAuth access token for the selected integration
         client = connect.Client()
-        credentials = client.oauth.get_credentials(user_session_token)
+        credentials = client.oauth.get_credentials(user_session_token, audience=integration_guid)
         access_token = credentials["access_token"]
-                
+
         return snowflake.connector.connect(
             account=account,
             token=access_token,
             authenticator="oauth",
-            warehouse=warehouse, 
+            warehouse=warehouse,
             database=database,
             schema=schema,
         )
-    else:       
+    else:
         # Fall back to Streamlit secrets with username/password
         account = st.secrets["SNOWFLAKE_ACCOUNT"]
         user = st.secrets.get("SNOWFLAKE_USER")
@@ -49,7 +55,7 @@ def init_connection():
         warehouse = st.secrets.get("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH")
         database = st.secrets.get("SNOWFLAKE_DATABASE", "YOUR_DATABASE")
         schema = st.secrets.get("SNOWFLAKE_SCHEMA", "PUBLIC")
-        
+
         return snowflake.connector.connect(
             account=account,
             user=user,
@@ -57,19 +63,38 @@ def init_connection():
             warehouse=warehouse,
             database=database,
             schema=schema,
-        )   
+        )
 
 # Query data
 @st.cache_data(ttl=600)
-def load_movies():
-    conn = init_connection()
+def load_movies(integration_guid):
+    conn = init_connection(integration_guid)
     query = "SELECT * FROM JENN_MOVIES ORDER BY rating DESC"
     df = pd.read_sql(query, conn)
     return df
-            
+
+# Resolve which integration to use
+if "SNOWFLAKE_ACCOUNT" in os.environ:
+    try:
+        integrations = get_integrations()
+    except Exception as e:
+        st.error(f"Failed to load Snowflake integrations: {e}")
+        st.stop()
+
+    if len(integrations) == 0:
+        st.error("No Snowflake OAuth integrations are associated with this content.")
+        st.stop()
+    elif len(integrations) == 1:
+        selected_guid = next(iter(integrations.values()))
+    else:
+        selected_name = st.selectbox("Select Snowflake integration:", list(integrations.keys()))
+        selected_guid = integrations[selected_name]
+else:
+    selected_guid = None
+
 # Load the data
 try:
-    df = load_movies()
+    df = load_movies(selected_guid)
     st.session_state['movies_df'] = df
 except Exception as e:
     st.error(f"Failed to connect to Snowflake: {e}")
@@ -116,3 +141,4 @@ if 'movies_df' in st.session_state:
 
 else:
     st.info("👈 Please enter your Snowflake credentials in the sidebar and click Connect")
+                                                                                          
