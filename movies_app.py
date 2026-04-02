@@ -10,12 +10,14 @@ st.set_page_config(page_title="Movie Database", page_icon="🎬")
 # Title
 st.title("🎬 Movie Database")
 
-# List OAuth integrations associated with this content
+# List Snowflake OAuth integrations available via the API key
 @st.cache_resource
 def get_integrations():
     client = connect.Client()
-    content = client.content.get()
-    return {assoc.name: assoc.guid for assoc in content.associations}
+    all_integrations = client.oauth.integrations.find()
+    snowflake = [i for i in all_integrations if "snowflake" in i["template"].lower()]
+    return {i["name"]: i["guid"] for i in snowflake}
+
 
 # Initialize connection for a specific integration
 @st.cache_resource
