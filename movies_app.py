@@ -10,20 +10,12 @@ st.set_page_config(page_title="Movie Database", page_icon="🎬")
 # Title
 st.title("🎬 Movie Database")
 
-# List Snowflake OAuth integrations available via the API key
+# Initialize connection automatically
 @st.cache_resource
-def get_integrations():
-    client = connect.Client()
-    all_integrations = client.oauth.integrations.find()
-    snowflake = [i for i in all_integrations if "snowflake" in i["template"].lower()]
-    return {i["name"]: i["guid"] for i in snowflake}
-
-
-# Initialize connection for a specific integration
-@st.cache_resource
-def init_connection(integration_guid):
+def init_connection():
     # Try to get credentials from environment variables first, then fall back to Streamlit secrets
     if "SNOWFLAKE_ACCOUNT" in os.environ:
+        # Use environment variables with OAuth token authentication via Connect SDK
         account = os.environ["SNOWFLAKE_ACCOUNT"]
         warehouse = os.environ.get("SNOWFLAKE_WAREHOUSE", "DEFAULT_WH")
         database = os.environ.get("SNOWFLAKE_DATABASE", "DEMOS")
@@ -36,9 +28,9 @@ def init_connection(integration_guid):
             st.error("Unable to get user session token. Make sure you're running in Posit Connect.")
             st.stop()
 
-        # Get OAuth access token for the selected integration
+        # Get OAuth access token using Posit Connect SDK
         client = connect.Client()
-        credentials = client.oauth.get_credentials(user_session_token, audience=integration_guid)
+        credentials = client.oauth.get_credentials(user_session_token)
         access_token = credentials["access_token"]
 
         return snowflake.connector.connect(
@@ -69,34 +61,15 @@ def init_connection(integration_guid):
 
 # Query data
 @st.cache_data(ttl=600)
-def load_movies(integration_guid):
-    conn = init_connection(integration_guid)
+def load_movies():
+    conn = init_connection()
     query = "SELECT * FROM JENN_MOVIES ORDER BY rating DESC"
     df = pd.read_sql(query, conn)
     return df
 
-# Resolve which integration to use
-if "SNOWFLAKE_ACCOUNT" in os.environ:
-    try:
-        integrations = get_integrations()
-    except Exception as e:
-        st.error(f"Failed to load Snowflake integrations: {e}")
-        st.stop()
-
-    if len(integrations) == 0:
-        st.error("No Snowflake OAuth integrations are associated with this content.")
-        st.stop()
-    elif len(integrations) == 1:
-        selected_guid = next(iter(integrations.values()))
-    else:
-        selected_name = st.selectbox("Select Snowflake integration:", list(integrations.keys()))
-        selected_guid = integrations[selected_name]
-else:
-    selected_guid = None
-
 # Load the data
 try:
-    df = load_movies(selected_guid)
+    df = load_movies()
     st.session_state['movies_df'] = df
 except Exception as e:
     st.error(f"Failed to connect to Snowflake: {e}")
